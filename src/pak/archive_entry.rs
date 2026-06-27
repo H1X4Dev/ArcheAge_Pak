@@ -85,6 +85,24 @@ impl ArchiveEntry {
         self.dummy1 = 0;
         self.dummy2 = 0;
     }
+
+    pub fn replace_moved(
+        &mut self,
+        offset: u64,
+        size: u64,
+        padding_size: u32,
+        md5: [u8; 16],
+        modify_time: i64,
+    ) {
+        self.offset = offset;
+        self.size = size;
+        self.size_duplicate = size;
+        self.padding_size = padding_size;
+        self.md5 = md5;
+        self.modify_time = modify_time;
+        self.dummy1 = 0;
+        self.dummy2 = 0;
+    }
 }
 
 pub struct ArchiveEntryBuilder {
