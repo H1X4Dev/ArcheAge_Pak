@@ -1,0 +1,8 @@
+pub const BLOCK_SIZE: u64 = 512;
+pub const DEFAULT_KEY: [u8; 16] = [
+    0x32, 0x1f, 0x2a, 0xee, 0xaa, 0x58, 0x4a, 0xb4, 0x9a, 0x6c, 0x9e, 0x09, 0xd5, 0x9e, 0x9c, 0x6f,
+];
+pub const FOOTER_SIZE: usize = 512;
+pub const FOOTER_USED_SIZE: usize = 32;
+pub const NAME_SIZE: usize = 264;
+pub const RECORD_SIZE: usize = 336;
