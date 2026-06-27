@@ -1,6 +1,7 @@
 mod archive;
 mod archive_entry;
 mod archive_mutator;
+mod archive_path_index;
 mod archive_writer;
 mod block_alignment;
 mod constants;
@@ -12,6 +13,7 @@ mod record_codec;
 pub use archive::Archive;
 pub use archive_entry::{ArchiveEntry, ArchiveEntryBuilder};
 pub use archive_mutator::ArchiveMutator;
+pub(crate) use archive_path_index::ArchivePathIndex;
 pub use archive_writer::ArchiveWriter;
 pub use block_alignment::BlockAlignment;
 pub use constants::{

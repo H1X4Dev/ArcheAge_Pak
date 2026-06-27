@@ -148,6 +148,52 @@ fn create_extract_replace_add_and_extract_all_roundtrip() -> Result<()> {
 }
 
 #[test]
+fn add_normalizes_import_paths_to_existing_archive_casing() -> Result<()> {
+    let temp = tempdir()?;
+    let source_dir = temp.path().join("source");
+    let existing_dir = source_dir.join("game").join("libs").join("particles");
+    fs::create_dir_all(&existing_dir)?;
+    fs::write(existing_dir.join("existing.xml"), b"old")?;
+
+    let pak = temp.path().join("case_normalized_pak");
+    run_cli(["create".into(), path_arg(&source_dir), path_arg(&pak)])?;
+
+    let patch_dir = temp.path().join("patch");
+    let patch_particles = patch_dir.join("game").join("Libs").join("Particles");
+    fs::create_dir_all(&patch_particles)?;
+    fs::write(patch_particles.join("existing.xml"), b"new")?;
+    fs::write(patch_particles.join("fresh.xml"), b"fresh")?;
+    run_cli(["add".into(), path_arg(&pak), path_arg(&patch_dir)])?;
+
+    let archive = Archive::open(&pak)?;
+    assert_eq!(archive.entries().len(), 2);
+    assert!(archive.find("game/libs/particles/existing.xml").is_some());
+    assert!(archive.find("game/libs/particles/fresh.xml").is_some());
+    assert!(archive.find("game/Libs/Particles/existing.xml").is_none());
+    assert!(archive.find("game/Libs/Particles/fresh.xml").is_none());
+
+    let existing_out = temp.path().join("existing.xml");
+    run_cli([
+        "extract-file".into(),
+        path_arg(&pak),
+        OsString::from("game/libs/particles/existing.xml"),
+        path_arg(&existing_out),
+    ])?;
+    assert_eq!(fs::read(&existing_out)?, b"new");
+
+    let fresh_out = temp.path().join("fresh.xml");
+    run_cli([
+        "extract-file".into(),
+        path_arg(&pak),
+        OsString::from("game/libs/particles/fresh.xml"),
+        path_arg(&fresh_out),
+    ])?;
+    assert_eq!(fs::read(&fresh_out)?, b"fresh");
+
+    Ok(())
+}
+
+#[test]
 fn pak_paths_reject_traversal() {
     assert!(PakPath::new("../x").is_err());
     assert!(PakPath::new("x/../y").is_err());

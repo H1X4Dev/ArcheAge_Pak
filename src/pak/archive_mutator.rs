@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fs::File,
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{filetime::WindowsFileTime, io::StreamCopier};
 
-use super::{Archive, ArchiveEntry, ArchiveWriter, BlockAlignment, PakPath};
+use super::{Archive, ArchiveEntry, ArchivePathIndex, ArchiveWriter, BlockAlignment, PakPath};
 
 pub struct ArchiveMutator {
     path: PathBuf,
@@ -17,7 +17,7 @@ pub struct ArchiveMutator {
     entries: Vec<ArchiveEntry>,
     extras: Vec<ArchiveEntry>,
     consumed_extras: Vec<bool>,
-    entry_indices: HashMap<String, usize>,
+    path_index: ArchivePathIndex,
     unused_slots: BTreeMap<u64, Vec<usize>>,
     fat_offset: u64,
     copier: StreamCopier,
@@ -29,7 +29,7 @@ impl ArchiveMutator {
         let archive = Archive::open(path)?;
         let fat_offset = archive.header().fat_offset();
         let (_, entries, extras) = archive.into_parts();
-        let entry_indices = Self::build_entry_indices(&entries)?;
+        let path_index = ArchivePathIndex::new(&entries)?;
         let unused_slots = Self::build_unused_slots(&extras);
         let consumed_extras = vec![false; extras.len()];
         let file = File::options()
@@ -43,7 +43,7 @@ impl ArchiveMutator {
             entries,
             extras,
             consumed_extras,
-            entry_indices,
+            path_index,
             unused_slots,
             fat_offset,
             copier: StreamCopier::default_large(),
@@ -62,7 +62,7 @@ impl ArchiveMutator {
         let source_size = metadata.len();
         let modify_time = WindowsFileTime::from_system_time(metadata.modified()?).value();
 
-        if let Some(entry_index) = self.entry_indices.get(pak_path.as_str()).copied() {
+        if let Some(entry_index) = self.path_index.resolve_entry_index(pak_path) {
             return self.replace_existing(
                 entry_index,
                 source_path,
@@ -75,9 +75,10 @@ impl ArchiveMutator {
         let create_time =
             WindowsFileTime::from_system_time(metadata.created().or_else(|_| metadata.modified())?)
                 .value();
+        let pak_path = self.path_index.canonicalize_for_insert(pak_path)?;
         self.add_new_file(
             source_path,
-            pak_path,
+            &pak_path,
             source_size,
             create_time,
             modify_time,
@@ -87,7 +88,7 @@ impl ArchiveMutator {
     }
 
     pub fn contains_file(&self, pak_path: &PakPath) -> bool {
-        self.entry_indices.contains_key(pak_path.as_str())
+        self.path_index.resolve_entry_index(pak_path).is_some()
     }
 
     pub fn finish(mut self) -> Result<u64> {
@@ -186,8 +187,8 @@ impl ArchiveMutator {
                 .modify_time(modify_time)
                 .build()?,
         );
-        self.entry_indices
-            .insert(pak_path.as_str().to_owned(), entry_index);
+        self.path_index
+            .insert_file(pak_path.as_str(), entry_index)?;
         Ok(())
     }
 
@@ -230,16 +231,6 @@ impl ArchiveMutator {
             .or_default()
             .push(extra_index);
         Ok(())
-    }
-
-    fn build_entry_indices(entries: &[ArchiveEntry]) -> Result<HashMap<String, usize>> {
-        let mut indices = HashMap::with_capacity(entries.len());
-        for (index, entry) in entries.iter().enumerate() {
-            if indices.insert(entry.name().to_owned(), index).is_some() {
-                bail!("duplicate pak entry name: {}", entry.name());
-            }
-        }
-        Ok(indices)
     }
 
     fn build_unused_slots(extras: &[ArchiveEntry]) -> BTreeMap<u64, Vec<usize>> {
