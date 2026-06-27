@@ -1,7 +1,10 @@
 mod archive;
 mod archive_entry;
+mod archive_entry_payload;
+mod archive_file_metadata;
 mod archive_mutator;
 mod archive_path_index;
+mod archive_payload_source;
 mod archive_writer;
 mod block_alignment;
 mod constants;
@@ -13,6 +16,8 @@ mod record_codec;
 
 pub use archive::Archive;
 pub use archive_entry::{ArchiveEntry, ArchiveEntryBuilder};
+pub(crate) use archive_entry_payload::ArchiveEntryPayload;
+pub(crate) use archive_file_metadata::ArchiveFileMetadata;
 pub use archive_mutator::ArchiveMutator;
 pub(crate) use archive_path_index::ArchivePathIndex;
 pub use archive_writer::ArchiveWriter;

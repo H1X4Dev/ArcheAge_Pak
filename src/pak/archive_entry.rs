@@ -1,5 +1,7 @@
 use anyhow::{Result, ensure};
 
+use super::ArchiveEntryPayload;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArchiveEntry {
     name: String,
@@ -17,6 +19,18 @@ pub struct ArchiveEntry {
 impl ArchiveEntry {
     pub fn builder(name: impl Into<String>) -> ArchiveEntryBuilder {
         ArchiveEntryBuilder::new(name)
+    }
+
+    pub(crate) fn file(name: impl Into<String>, payload: &ArchiveEntryPayload) -> Result<Self> {
+        Self::builder(name)
+            .offset(payload.offset())
+            .size(payload.size())
+            .size_duplicate(payload.size())
+            .padding_size(payload.padding_size())
+            .md5(payload.md5())
+            .create_time(payload.create_time())
+            .modify_time(payload.modify_time())
+            .build()
     }
 
     pub fn unused(offset: u64, slot_size: u64) -> Result<Self> {

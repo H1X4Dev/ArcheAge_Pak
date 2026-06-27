@@ -1,16 +1,10 @@
-use std::{
-    ffi::OsString,
-    fs,
-    path::{Path, PathBuf},
-};
+mod common;
+
+use std::{ffi::OsString, fs};
 
 use anyhow::Result;
-use archeage_pak::{
-    cli::Cli,
-    commands::CommandRunner,
-    pak::{Archive, PakPath},
-};
-use clap::Parser;
+use archeage_pak::pak::{Archive, PakPath};
+use common::{create_pak, path_arg, run_cli};
 use tempfile::tempdir;
 
 #[test]
@@ -26,7 +20,7 @@ fn create_extract_replace_add_and_extract_all_roundtrip() -> Result<()> {
     )?;
 
     let pak = temp.path().join("roundtrip_pak");
-    run_cli(["create".into(), path_arg(&source_dir), path_arg(&pak)])?;
+    create_pak(&source_dir, &pak)?;
 
     let archive = Archive::open(&pak)?;
     assert_eq!(archive.entries().len(), 2);
@@ -156,7 +150,7 @@ fn add_normalizes_import_paths_to_existing_archive_casing() -> Result<()> {
     fs::write(existing_dir.join("existing.xml"), b"old")?;
 
     let pak = temp.path().join("case_normalized_pak");
-    run_cli(["create".into(), path_arg(&source_dir), path_arg(&pak)])?;
+    create_pak(&source_dir, &pak)?;
 
     let patch_dir = temp.path().join("patch");
     let patch_particles = patch_dir.join("game").join("Libs").join("Particles");
@@ -198,13 +192,4 @@ fn pak_paths_reject_traversal() {
     assert!(PakPath::new("../x").is_err());
     assert!(PakPath::new("x/../y").is_err());
     assert!(PakPath::new("/absolute/is/normalized").is_ok());
-}
-
-fn run_cli<const N: usize>(args: [OsString; N]) -> Result<()> {
-    let args = std::iter::once(OsString::from("archeage-pak")).chain(args);
-    CommandRunner::new().run(Cli::parse_from(args))
-}
-
-fn path_arg(path: &Path) -> OsString {
-    PathBuf::from(path).into_os_string()
 }

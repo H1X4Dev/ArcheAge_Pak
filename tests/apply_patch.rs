@@ -1,16 +1,10 @@
-use std::{
-    ffi::OsString,
-    fs,
-    path::{Path, PathBuf},
-};
+mod common;
+
+use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
-use archeage_pak::{
-    cli::Cli,
-    commands::CommandRunner,
-    pak::{Archive, DeletedManifest, PakPath},
-};
-use clap::Parser;
+use archeage_pak::pak::{Archive, DeletedManifest, PakPath};
+use common::{create_pak, path_arg, run_cli};
 use tempfile::tempdir;
 
 #[test]
@@ -24,11 +18,7 @@ fn apply_patch_copies_and_deletes() -> Result<()> {
     fs::write(target_dir.join("deleted.txt"), b"/game/old/path.cgf\n")?;
 
     let target_pak = temp.path().join("target.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&target_dir),
-        path_arg(&target_pak),
-    ])?;
+    create_pak(&target_dir, &target_pak)?;
 
     let source_dir = temp.path().join("patch_source");
     fs::create_dir_all(&source_dir)?;
@@ -37,17 +27,9 @@ fn apply_patch_copies_and_deletes() -> Result<()> {
     fs::write(source_dir.join("deleted.txt"), b"/remove.txt\n")?;
 
     let source_pak = temp.path().join("source.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&source_dir),
-        path_arg(&source_pak),
-    ])?;
+    create_pak(&source_dir, &source_pak)?;
 
-    run_cli([
-        "apply-patch".into(),
-        path_arg(&source_pak),
-        path_arg(&target_pak),
-    ])?;
+    apply_patch_pak(&source_pak, &target_pak)?;
 
     let archive = Archive::open(&target_pak)?;
     assert_eq!(archive.entries().len(), 3);
@@ -77,11 +59,7 @@ fn apply_patch_without_deleted_txt() -> Result<()> {
     fs::write(target_dir.join("existing.txt"), b"existing")?;
 
     let target_pak = temp.path().join("target.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&target_dir),
-        path_arg(&target_pak),
-    ])?;
+    create_pak(&target_dir, &target_pak)?;
 
     let source_dir = temp.path().join("patch_source");
     fs::create_dir_all(&source_dir)?;
@@ -89,17 +67,9 @@ fn apply_patch_without_deleted_txt() -> Result<()> {
     fs::write(source_dir.join("added.txt"), b"added")?;
 
     let source_pak = temp.path().join("source.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&source_dir),
-        path_arg(&source_pak),
-    ])?;
+    create_pak(&source_dir, &source_pak)?;
 
-    run_cli([
-        "apply-patch".into(),
-        path_arg(&source_pak),
-        path_arg(&target_pak),
-    ])?;
+    apply_patch_pak(&source_pak, &target_pak)?;
 
     let archive = Archive::open(&target_pak)?;
     assert_eq!(archive.entries().len(), 2);
@@ -125,28 +95,16 @@ fn apply_patch_warns_on_missing_delete() -> Result<()> {
     fs::write(target_dir.join("keep.txt"), b"keep")?;
 
     let target_pak = temp.path().join("target.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&target_dir),
-        path_arg(&target_pak),
-    ])?;
+    create_pak(&target_dir, &target_pak)?;
 
     let source_dir = temp.path().join("patch_source");
     fs::create_dir_all(&source_dir)?;
     fs::write(source_dir.join("deleted.txt"), b"/missing/path.cgf\n")?;
 
     let source_pak = temp.path().join("source.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&source_dir),
-        path_arg(&source_pak),
-    ])?;
+    create_pak(&source_dir, &source_pak)?;
 
-    run_cli([
-        "apply-patch".into(),
-        path_arg(&source_pak),
-        path_arg(&target_pak),
-    ])?;
+    apply_patch_pak(&source_pak, &target_pak)?;
 
     let archive = Archive::open(&target_pak)?;
     assert_eq!(archive.entries().len(), 2);
@@ -169,28 +127,16 @@ fn apply_patch_deletes_case_variant_target_entry() -> Result<()> {
     fs::write(target_nested.join("Foo.txt"), b"remove me")?;
 
     let target_pak = temp.path().join("target.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&target_dir),
-        path_arg(&target_pak),
-    ])?;
+    create_pak(&target_dir, &target_pak)?;
 
     let source_dir = temp.path().join("patch_source");
     fs::create_dir_all(&source_dir)?;
     fs::write(source_dir.join("deleted.txt"), b"/game/libs/foo.txt\n")?;
 
     let source_pak = temp.path().join("source.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&source_dir),
-        path_arg(&source_pak),
-    ])?;
+    create_pak(&source_dir, &source_pak)?;
 
-    run_cli([
-        "apply-patch".into(),
-        path_arg(&source_pak),
-        path_arg(&target_pak),
-    ])?;
+    apply_patch_pak(&source_pak, &target_pak)?;
 
     let archive = Archive::open(&target_pak)?;
     assert_eq!(archive.entries().len(), 1);
@@ -213,11 +159,7 @@ fn apply_patch_normalizes_source_paths_to_existing_archive_casing() -> Result<()
     fs::write(target_particles.join("existing.xml"), b"old")?;
 
     let target_pak = temp.path().join("target.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&target_dir),
-        path_arg(&target_pak),
-    ])?;
+    create_pak(&target_dir, &target_pak)?;
 
     let source_dir = temp.path().join("patch_source");
     let source_particles = source_dir.join("game").join("Libs").join("Particles");
@@ -226,17 +168,9 @@ fn apply_patch_normalizes_source_paths_to_existing_archive_casing() -> Result<()
     fs::write(source_particles.join("fresh.xml"), b"fresh")?;
 
     let source_pak = temp.path().join("source.pak");
-    run_cli([
-        "create".into(),
-        path_arg(&source_dir),
-        path_arg(&source_pak),
-    ])?;
+    create_pak(&source_dir, &source_pak)?;
 
-    run_cli([
-        "apply-patch".into(),
-        path_arg(&source_pak),
-        path_arg(&target_pak),
-    ])?;
+    apply_patch_pak(&source_pak, &target_pak)?;
 
     let archive = Archive::open(&target_pak)?;
     assert_eq!(archive.entries().len(), 2);
@@ -282,12 +216,20 @@ fn apply_patch_rejects_same_file() -> Result<()> {
     fs::write(source_dir.join("alpha.txt"), b"alpha")?;
 
     let pak = temp.path().join("same.pak");
-    run_cli(["create".into(), path_arg(&source_dir), path_arg(&pak)])?;
+    create_pak(&source_dir, &pak)?;
 
-    let result = run_cli(["apply-patch".into(), path_arg(&pak), path_arg(&pak)]);
+    let result = apply_patch_pak(&pak, &pak);
     assert!(result.is_err());
 
     Ok(())
+}
+
+fn apply_patch_pak(source_pak: &Path, target_pak: &Path) -> Result<()> {
+    run_cli([
+        "apply-patch".into(),
+        path_arg(source_pak),
+        path_arg(target_pak),
+    ])
 }
 
 fn read_pak_entry(pak: &Path, pak_path: &str) -> Result<Vec<u8>> {
@@ -301,13 +243,4 @@ fn read_pak_entry(pak: &Path, pak_path: &str) -> Result<Vec<u8>> {
         entry.offset(),
         entry.size(),
     )
-}
-
-fn run_cli<const N: usize>(args: [OsString; N]) -> Result<()> {
-    let args = std::iter::once(OsString::from("archeage-pak")).chain(args);
-    CommandRunner::new().run(Cli::parse_from(args))
-}
-
-fn path_arg(path: &Path) -> OsString {
-    PathBuf::from(path).into_os_string()
 }

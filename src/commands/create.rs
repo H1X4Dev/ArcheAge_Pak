@@ -1,15 +1,17 @@
 use std::{
     fs::{self, File},
-    io::{Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom},
 };
 
 use anyhow::{Context, Result};
 
 use crate::{
     cli::CreateArgs,
-    filetime::WindowsFileTime,
     io::{DirectorySource, StreamCopier},
-    pak::{ArchiveEntry, ArchiveWriter, BlockAlignment, PakPath},
+    pak::{
+        ArchiveEntry, ArchiveEntryPayload, ArchiveFileMetadata, ArchiveWriter, BlockAlignment,
+        PakPath,
+    },
 };
 
 pub struct CreateCommand {
@@ -42,30 +44,20 @@ impl CreateCommand {
                 .strip_prefix(source.root())
                 .with_context(|| format!("failed to relativize {}", file_path.display()))?;
             let pak_path = PakPath::from_disk_relative(relative, self.args.prefix.as_deref())?;
-            let metadata = file_path
-                .metadata()
-                .with_context(|| format!("failed to stat {}", file_path.display()))?;
-            let create_time = WindowsFileTime::from_system_time(
-                metadata.created().or_else(|_| metadata.modified())?,
-            )
-            .value();
-            let modify_time = WindowsFileTime::from_system_time(metadata.modified()?).value();
+            let metadata = ArchiveFileMetadata::from_path(file_path)?;
             let outcome = copier.copy_file_to_writer_with_md5(file_path, &mut pak)?;
             let padding = BlockAlignment::padding_for_size(outcome.bytes()) as u32;
             if padding > 0 {
-                write_zeros(&mut pak, padding as usize)?;
+                copier.write_zero_padding(&mut pak, padding as usize)?;
             }
-            entries.push(
-                ArchiveEntry::builder(pak_path.as_str())
-                    .offset(offset)
-                    .size(outcome.bytes())
-                    .size_duplicate(outcome.bytes())
-                    .padding_size(padding)
-                    .md5(outcome.md5())
-                    .create_time(create_time)
-                    .modify_time(modify_time)
-                    .build()?,
+            let payload = ArchiveEntryPayload::from_copy_outcome(
+                offset,
+                padding,
+                &outcome,
+                metadata.create_time(),
+                metadata.modify_time(),
             );
+            entries.push(ArchiveEntry::file(pak_path.as_str(), &payload)?);
             offset += outcome.bytes() + u64::from(padding);
         }
 
@@ -80,16 +72,4 @@ impl CreateCommand {
         );
         Ok(())
     }
-}
-
-fn write_zeros(writer: &mut File, mut bytes: usize) -> Result<()> {
-    const ZEROES: [u8; 8192] = [0; 8192];
-    while bytes > 0 {
-        let chunk = bytes.min(ZEROES.len());
-        writer
-            .write_all(&ZEROES[..chunk])
-            .context("failed to write pak payload padding")?;
-        bytes -= chunk;
-    }
-    Ok(())
 }
