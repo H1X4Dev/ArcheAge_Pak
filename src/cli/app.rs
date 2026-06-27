@@ -3,11 +3,7 @@ use clap::Parser;
 use super::Command;
 
 #[derive(Debug, Parser)]
-#[command(
-    author,
-    version,
-    about = "High-performance ArcheAge game_pak extractor and writer"
-)]
+#[command(author, version, about = "ArcheAge game_pak extractor and writer")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
