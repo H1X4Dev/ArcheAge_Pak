@@ -2,7 +2,7 @@ use aes::Aes128;
 use anyhow::{Result, anyhow};
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
 
-use super::DEFAULT_KEY;
+use super::PakKey;
 
 type Aes128CbcDecryptor = cbc::Decryptor<Aes128>;
 type Aes128CbcEncryptor = cbc::Encryptor<Aes128>;
@@ -14,7 +14,7 @@ pub struct PakCrypto {
 
 impl PakCrypto {
     pub fn xl_games() -> Self {
-        Self::new(DEFAULT_KEY)
+        PakKey::XlGames.crypto()
     }
 
     pub fn new(key: [u8; 16]) -> Self {

@@ -33,4 +33,8 @@ impl WindowsFileTime {
             (ticks_remainder as u32) * 100,
         )
     }
+
+    pub fn try_to_file_time(value: i64) -> Option<::filetime::FileTime> {
+        (value > 0).then(|| Self::to_file_time(value))
+    }
 }

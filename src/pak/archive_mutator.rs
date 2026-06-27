@@ -11,11 +11,12 @@ use crate::{filetime::WindowsFileTime, io::StreamCopier};
 
 use super::{
     Archive, ArchiveEntry, ArchiveEntryPayload, ArchivePathIndex, ArchiveWriter, BlockAlignment,
-    PakPath, archive_payload_source::ArchivePayloadSource,
+    PakFormat, PakPath, archive_payload_source::ArchivePayloadSource,
 };
 
 pub struct ArchiveMutator {
     path: PathBuf,
+    format: PakFormat,
     file: File,
     entries: Vec<ArchiveEntry>,
     extras: Vec<ArchiveEntry>,
@@ -30,6 +31,7 @@ impl ArchiveMutator {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let archive = Archive::open(path)?;
+        let format = archive.header().format();
         let fat_offset = archive.header().fat_offset();
         let (_, entries, extras) = archive.into_parts();
         let path_index = ArchivePathIndex::new(&entries)?;
@@ -42,6 +44,7 @@ impl ArchiveMutator {
             .with_context(|| format!("failed to open {}", path.display()))?;
         Ok(Self {
             path: path.to_path_buf(),
+            format,
             file,
             entries,
             extras,
@@ -106,7 +109,7 @@ impl ArchiveMutator {
             .zip(self.consumed_extras)
             .filter_map(|(entry, consumed)| (!consumed).then_some(entry))
             .collect::<Vec<_>>();
-        let final_len = ArchiveWriter::xl_games().write_to(
+        let final_len = ArchiveWriter::for_format(self.format).write_to(
             &mut self.file,
             self.fat_offset,
             &self.entries,

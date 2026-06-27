@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use super::{ArchiveEntry, Header, PakCrypto, RECORD_SIZE, RecordCodec};
+use super::{ArchiveEntry, Header, PakFormat, RECORD_SIZE, RecordCodec};
 
 #[derive(Clone, Debug)]
 pub struct Archive {
@@ -18,6 +18,18 @@ pub struct Archive {
 
 impl Archive {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_detected(path)
+    }
+
+    pub fn open_with_format(path: impl AsRef<Path>, format: PakFormat) -> Result<Self> {
+        Self::open_inner(path, Some(format))
+    }
+
+    fn open_detected(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_inner(path, None)
+    }
+
+    fn open_inner(path: impl AsRef<Path>, format: Option<PakFormat>) -> Result<Self> {
         let path = path.as_ref();
         let mut file =
             File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
@@ -25,9 +37,12 @@ impl Archive {
             .metadata()
             .with_context(|| format!("failed to stat {}", path.display()))?
             .len();
-        let crypto = PakCrypto::xl_games();
-        let header = Header::read_from(&mut file, archive_len, &crypto)?;
-        let codec = RecordCodec::new(crypto);
+        let header = if let Some(format) = format {
+            Header::read_with_format(&mut file, archive_len, format)?
+        } else {
+            Header::read_from(&mut file, archive_len)?
+        };
+        let codec = RecordCodec::for_format(header.format());
         let mut encrypted = vec![0_u8; header.record_count() * RECORD_SIZE];
         file.seek(SeekFrom::Start(header.fat_offset()))
             .context("failed to seek to pak FAT")?;
@@ -38,7 +53,14 @@ impl Archive {
         for chunk in encrypted.chunks_exact(RECORD_SIZE) {
             records.push(codec.decode(chunk)?);
         }
-        let extras = records.split_off(header.file_count());
+        let extras = if header.format().stores_extras_first() {
+            let entries = records.split_off(header.extra_file_count());
+            let extras = records;
+            records = entries;
+            extras
+        } else {
+            records.split_off(header.file_count())
+        };
 
         Ok(Self::new(path.to_path_buf(), header, records, extras))
     }

@@ -22,6 +22,8 @@ Editing commands modify pak files in place. Keep a backup of any original archiv
 
 Pak paths use forward slashes, for example `game/config/example.xml`. Unsafe paths such as `../file` are rejected.
 
+During `extract-all`, archive path characters that are invalid on Windows filenames are percent-escaped in the output path, for example `??` becomes `%3F%3F`.
+
 ## Install
 
 Build a release binary with Rust 1.91 or newer:
@@ -54,6 +56,8 @@ replace       Replace one file in an existing pak
 apply-patch   Copy a source pak into a target pak and apply deleted.txt deletions
 ```
 
+Existing archives are auto-detected from their footer. New archives default to the XL Games format; pass `--format archerage` to `create` when you need an Archerage pak.
+
 ## Examples
 
 List archive contents:
@@ -84,6 +88,12 @@ Create a new pak from a directory:
 
 ```powershell
 archeage-pak.exe create F:\input\directory F:\out\new_game_pak
+```
+
+Create a new Archerage pak from a directory:
+
+```powershell
+archeage-pak.exe create --format archerage F:\input\directory F:\out\new_game_pak
 ```
 
 Create a new pak while placing every file under a pak prefix:

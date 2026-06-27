@@ -14,8 +14,9 @@ impl ListCommand {
     pub fn execute(&self) -> Result<()> {
         let archive = Archive::open(&self.args.pak)?;
         println!(
-            "pak={} files={} extra={} fat_offset={} size={}",
+            "pak={} format={:?} files={} extra={} fat_offset={} size={}",
             archive.path().display(),
+            archive.header().format(),
             archive.header().file_count(),
             archive.header().extra_file_count(),
             archive.header().fat_offset(),

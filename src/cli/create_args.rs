@@ -2,8 +2,13 @@ use std::path::PathBuf;
 
 use clap::Args;
 
+use super::FormatArgs;
+
 #[derive(Debug, Args)]
 pub struct CreateArgs {
+    #[command(flatten)]
+    pub format: FormatArgs,
+
     /// Source directory to pack.
     pub source_dir: PathBuf,
 

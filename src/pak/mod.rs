@@ -11,6 +11,8 @@ mod constants;
 mod crypto;
 mod deleted_manifest;
 mod header;
+mod pak_format;
+mod pak_key;
 mod pak_path;
 mod record_codec;
 
@@ -22,11 +24,11 @@ pub use archive_mutator::ArchiveMutator;
 pub(crate) use archive_path_index::ArchivePathIndex;
 pub use archive_writer::ArchiveWriter;
 pub use block_alignment::BlockAlignment;
-pub use constants::{
-    BLOCK_SIZE, DEFAULT_KEY, FOOTER_SIZE, FOOTER_USED_SIZE, NAME_SIZE, RECORD_SIZE,
-};
+pub use constants::{BLOCK_SIZE, FOOTER_SIZE, FOOTER_USED_SIZE, NAME_SIZE, RECORD_SIZE};
 pub use crypto::PakCrypto;
 pub use deleted_manifest::{DELETED_MANIFEST_PATH, DeletedManifest};
 pub use header::Header;
+pub use pak_format::PakFormat;
+pub use pak_key::PakKey;
 pub use pak_path::PakPath;
 pub use record_codec::RecordCodec;

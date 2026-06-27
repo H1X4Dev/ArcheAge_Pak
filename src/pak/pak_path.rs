@@ -48,11 +48,71 @@ impl PakPath {
     pub fn join_to(&self, root: &Path) -> Result<PathBuf> {
         let mut out = root.to_path_buf();
         for segment in self.value.split('/') {
-            if segment.contains(':') {
-                bail!("pak path segment is invalid on Windows: {}", self.value);
-            }
-            out.push(segment);
+            out.push(Self::windows_safe_segment(segment));
         }
         Ok(out)
+    }
+
+    fn windows_safe_segment(segment: &str) -> String {
+        let mut output = String::with_capacity(segment.len());
+        for (index, character) in segment.char_indices() {
+            let is_trailing = index + character.len_utf8() == segment.len();
+            if Self::must_escape_windows_character(character, is_trailing) {
+                Self::push_percent_encoded_character(&mut output, character);
+            } else {
+                output.push(character);
+            }
+        }
+
+        if Self::is_reserved_windows_name(&output) {
+            output.push_str("%00");
+        }
+
+        output
+    }
+
+    fn must_escape_windows_character(character: char, is_trailing: bool) -> bool {
+        matches!(
+            character,
+            '<' | '>' | ':' | '"' | '\\' | '|' | '?' | '*' | '%'
+        ) || character.is_control()
+            || (is_trailing && matches!(character, ' ' | '.'))
+    }
+
+    fn push_percent_encoded_character(output: &mut String, character: char) {
+        let mut bytes = [0_u8; 4];
+        for byte in character.encode_utf8(&mut bytes).as_bytes() {
+            output.push('%');
+            output.push_str(&format!("{byte:02X}"));
+        }
+    }
+
+    fn is_reserved_windows_name(segment: &str) -> bool {
+        let name = segment.split('.').next().unwrap_or(segment);
+        matches!(
+            name.to_ascii_uppercase().as_str(),
+            "CON"
+                | "PRN"
+                | "AUX"
+                | "NUL"
+                | "COM1"
+                | "COM2"
+                | "COM3"
+                | "COM4"
+                | "COM5"
+                | "COM6"
+                | "COM7"
+                | "COM8"
+                | "COM9"
+                | "LPT1"
+                | "LPT2"
+                | "LPT3"
+                | "LPT4"
+                | "LPT5"
+                | "LPT6"
+                | "LPT7"
+                | "LPT8"
+                | "LPT9"
+        )
     }
 }

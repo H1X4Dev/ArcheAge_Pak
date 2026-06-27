@@ -61,7 +61,12 @@ impl CreateCommand {
             offset += outcome.bytes() + u64::from(padding);
         }
 
-        let final_len = ArchiveWriter::xl_games().write_to(&mut pak, offset, &entries, &[])?;
+        let final_len = ArchiveWriter::for_format(self.args.format.pak_format()).write_to(
+            &mut pak,
+            offset,
+            &entries,
+            &[],
+        )?;
         pak.set_len(final_len)
             .with_context(|| format!("failed to set length on {}", self.args.pak.display()))?;
         println!(

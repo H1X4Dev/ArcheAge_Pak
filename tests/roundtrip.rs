@@ -1,9 +1,14 @@
 mod common;
 
-use std::{ffi::OsString, fs};
+use std::{
+    ffi::OsString,
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom, Write},
+    path::Path,
+};
 
 use anyhow::Result;
-use archeage_pak::pak::{Archive, PakPath};
+use archeage_pak::pak::{Archive, FOOTER_SIZE, PakFormat, PakPath, RECORD_SIZE};
 use common::{create_pak, path_arg, run_cli};
 use tempfile::tempdir;
 
@@ -188,8 +193,101 @@ fn add_normalizes_import_paths_to_existing_archive_casing() -> Result<()> {
 }
 
 #[test]
+fn archerage_format_roundtrip_auto_detects_existing_pak() -> Result<()> {
+    let temp = tempdir()?;
+    let source_dir = temp.path().join("source");
+    fs::create_dir_all(&source_dir)?;
+    fs::write(source_dir.join("alpha.txt"), b"archerage alpha")?;
+
+    let pak = temp.path().join("archerage_format_pak");
+    run_cli([
+        "create".into(),
+        "--format".into(),
+        "archerage".into(),
+        path_arg(&source_dir),
+        path_arg(&pak),
+    ])?;
+
+    let archive = Archive::open(&pak)?;
+    assert_eq!(archive.header().format(), PakFormat::Archerage);
+    assert!(archive.find("alpha.txt").is_some());
+
+    let replacement = temp.path().join("replacement.txt");
+    let replacement_bytes = (0..900)
+        .map(|value| (value % 251) as u8)
+        .collect::<Vec<_>>();
+    fs::write(&replacement, &replacement_bytes)?;
+    run_cli([
+        "replace".into(),
+        path_arg(&pak),
+        OsString::from("alpha.txt"),
+        path_arg(&replacement),
+    ])?;
+
+    let archive = Archive::open(&pak)?;
+    assert_eq!(archive.header().format(), PakFormat::Archerage);
+    assert_eq!(archive.entries().len(), 1);
+    assert_eq!(archive.extras().len(), 1);
+    assert_eq!(
+        archive.find("alpha.txt").expect("replaced entry").size(),
+        replacement_bytes.len() as u64
+    );
+
+    let out = temp.path().join("alpha_out.txt");
+    run_cli([
+        "extract-file".into(),
+        path_arg(&pak),
+        OsString::from("alpha.txt"),
+        path_arg(&out),
+    ])?;
+    assert_eq!(fs::read(&out)?, replacement_bytes);
+
+    Ok(())
+}
+
+#[test]
+fn reader_accepts_unpadded_fat_before_footer() -> Result<()> {
+    let temp = tempdir()?;
+    let source_dir = temp.path().join("source");
+    fs::create_dir_all(&source_dir)?;
+    fs::write(source_dir.join("alpha.txt"), b"alpha")?;
+
+    let pak = temp.path().join("unpadded_fat_pak");
+    create_pak(&source_dir, &pak)?;
+
+    let archive = Archive::open(&pak)?;
+    let unpadded_len =
+        archive.header().fat_offset() + (archive.header().record_count() * RECORD_SIZE) as u64;
+    let mut file = File::options().read(true).write(true).open(&pak)?;
+    let mut footer = [0_u8; FOOTER_SIZE];
+    file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
+    file.read_exact(&mut footer)?;
+    file.seek(SeekFrom::Start(unpadded_len))?;
+    file.write_all(&footer)?;
+    file.set_len(unpadded_len + FOOTER_SIZE as u64)?;
+    drop(file);
+
+    let archive = Archive::open(&pak)?;
+    assert_eq!(archive.entries().len(), 1);
+    assert!(archive.find("alpha.txt").is_some());
+
+    Ok(())
+}
+
+#[test]
 fn pak_paths_reject_traversal() {
     assert!(PakPath::new("../x").is_err());
     assert!(PakPath::new("x/../y").is_err());
     assert!(PakPath::new("/absolute/is/normalized").is_ok());
+    let safe = PakPath::new("game/items/axe_2h_mmorpg_??.mtl")
+        .expect("valid pak path")
+        .join_to(Path::new("out"))
+        .expect("safe output path");
+    assert_eq!(
+        safe,
+        Path::new("out")
+            .join("game")
+            .join("items")
+            .join("axe_2h_mmorpg_%3F%3F.mtl")
+    );
 }

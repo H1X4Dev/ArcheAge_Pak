@@ -2,10 +2,11 @@ use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::{BLOCK_SIZE, FOOTER_SIZE, PakCrypto, RECORD_SIZE};
+use super::{BLOCK_SIZE, FOOTER_SIZE, PakFormat, RECORD_SIZE};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Header {
+    format: PakFormat,
     file_count: usize,
     extra_file_count: usize,
     fat_offset: u64,
@@ -14,12 +15,14 @@ pub struct Header {
 
 impl Header {
     pub fn new(
+        format: PakFormat,
         file_count: usize,
         extra_file_count: usize,
         fat_offset: u64,
         archive_len: u64,
     ) -> Self {
         Self {
+            format,
             file_count,
             extra_file_count,
             fat_offset,
@@ -27,7 +30,30 @@ impl Header {
         }
     }
 
-    pub fn read_from<R>(reader: &mut R, archive_len: u64, crypto: &PakCrypto) -> Result<Self>
+    pub fn read_from<R>(reader: &mut R, archive_len: u64) -> Result<Self>
+    where
+        R: Read + Seek,
+    {
+        let encrypted = Self::read_encrypted_footer(reader, archive_len)?;
+        for format in PakFormat::known() {
+            if let Some(header) = Self::try_parse_footer(encrypted, archive_len, *format)? {
+                return Ok(header);
+            }
+        }
+
+        bail!("unsupported pak footer magic");
+    }
+
+    pub fn read_with_format<R>(reader: &mut R, archive_len: u64, format: PakFormat) -> Result<Self>
+    where
+        R: Read + Seek,
+    {
+        let encrypted = Self::read_encrypted_footer(reader, archive_len)?;
+        Self::try_parse_footer(encrypted, archive_len, format)?
+            .with_context(|| format!("unsupported pak footer magic for {format:?}"))
+    }
+
+    fn read_encrypted_footer<R>(reader: &mut R, archive_len: u64) -> Result<[u8; FOOTER_SIZE]>
     where
         R: Read + Seek,
     {
@@ -43,16 +69,21 @@ impl Header {
         reader
             .read_exact(&mut footer)
             .context("failed to read pak footer")?;
-        crypto.decrypt_in_place(&mut footer)?;
+        Ok(footer)
+    }
 
-        if &footer[0..4] != b"WIBO" {
-            bail!("unsupported pak footer magic");
-        }
+    fn try_parse_footer(
+        encrypted: [u8; FOOTER_SIZE],
+        archive_len: u64,
+        format: PakFormat,
+    ) -> Result<Option<Self>> {
+        let mut footer = encrypted;
+        format.key().crypto().decrypt_in_place(&mut footer)?;
 
-        let file_count =
-            u32::from_le_bytes(footer[8..12].try_into().expect("slice length")) as usize;
-        let extra_file_count =
-            u32::from_le_bytes(footer[12..16].try_into().expect("slice length")) as usize;
+        let Some((file_count, extra_file_count)) = format.footer_counts(&footer) else {
+            return Ok(None);
+        };
+
         let record_count = file_count
             .checked_add(extra_file_count)
             .context("pak record count overflow")?;
@@ -65,12 +96,17 @@ impl Header {
             .context("pak FAT offset underflow")?;
         let fat_offset = raw_fat_offset - (raw_fat_offset % BLOCK_SIZE);
 
-        Ok(Self::new(
+        Ok(Some(Self::new(
+            format,
             file_count,
             extra_file_count,
             fat_offset,
             archive_len,
-        ))
+        )))
+    }
+
+    pub fn format(&self) -> PakFormat {
+        self.format
     }
 
     pub fn file_count(&self) -> usize {

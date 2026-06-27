@@ -56,10 +56,11 @@ impl ExtractAllCommand {
                             entry.size()
                         );
                     }
-                    let mtime = WindowsFileTime::to_file_time(entry.modify_time());
-                    set_file_mtime(&out_path, mtime).with_context(|| {
-                        format!("failed to set mtime on {}", out_path.display())
-                    })?;
+                    if let Some(mtime) = WindowsFileTime::try_to_file_time(entry.modify_time()) {
+                        set_file_mtime(&out_path, mtime).with_context(|| {
+                            format!("failed to set mtime on {}", out_path.display())
+                        })?;
+                    }
                     Ok(())
                 },
             )

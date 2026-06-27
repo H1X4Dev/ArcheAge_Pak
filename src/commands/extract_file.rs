@@ -40,9 +40,11 @@ impl ExtractFileCommand {
                 entry.size()
             );
         }
-        let mtime = WindowsFileTime::to_file_time(entry.modify_time());
-        set_file_mtime(&self.args.out_file, mtime)
-            .with_context(|| format!("failed to set mtime on {}", self.args.out_file.display()))?;
+        if let Some(mtime) = WindowsFileTime::try_to_file_time(entry.modify_time()) {
+            set_file_mtime(&self.args.out_file, mtime).with_context(|| {
+                format!("failed to set mtime on {}", self.args.out_file.display())
+            })?;
+        }
         println!(
             "extracted {} -> {} ({} bytes)",
             entry.name(),

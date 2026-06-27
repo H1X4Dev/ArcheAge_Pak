@@ -2,23 +2,22 @@ use std::io::{Seek, SeekFrom, Write};
 
 use anyhow::{Context, Result, ensure};
 
-use super::{ArchiveEntry, BLOCK_SIZE, FOOTER_SIZE, FOOTER_USED_SIZE, PakCrypto, RecordCodec};
+use super::{ArchiveEntry, BLOCK_SIZE, FOOTER_SIZE, FOOTER_USED_SIZE, PakFormat, RecordCodec};
 
 pub struct ArchiveWriter {
     codec: RecordCodec,
-    crypto: PakCrypto,
+    format: PakFormat,
 }
 
 impl ArchiveWriter {
     pub fn xl_games() -> Self {
-        let crypto = PakCrypto::xl_games();
-        Self::new(crypto)
+        Self::for_format(PakFormat::XlGames)
     }
 
-    pub fn new(crypto: PakCrypto) -> Self {
+    pub fn for_format(format: PakFormat) -> Self {
         Self {
-            codec: RecordCodec::new(crypto.clone()),
-            crypto,
+            codec: RecordCodec::for_format(format),
+            format,
         }
     }
 
@@ -41,11 +40,14 @@ impl ArchiveWriter {
             .seek(SeekFrom::Start(fat_offset))
             .context("failed to seek to output FAT offset")?;
 
-        for entry in entries.iter().chain(extras.iter()) {
-            let record = self.codec.encode(entry)?;
-            writer
-                .write_all(&record)
-                .context("failed to write pak FAT record")?;
+        if self.format.stores_extras_first() {
+            for entry in extras.iter().chain(entries.iter()) {
+                self.write_record(writer, entry)?;
+            }
+        } else {
+            for entry in entries.iter().chain(extras.iter()) {
+                self.write_record(writer, entry)?;
+            }
         }
 
         let records_len = ((entries.len() + extras.len()) * super::RECORD_SIZE) as u64;
@@ -58,10 +60,12 @@ impl ArchiveWriter {
         }
 
         let mut footer_plain = [0_u8; FOOTER_SIZE];
-        footer_plain[0..4].copy_from_slice(b"WIBO");
-        footer_plain[8..12].copy_from_slice(&(entries.len() as u32).to_le_bytes());
-        footer_plain[12..16].copy_from_slice(&(extras.len() as u32).to_le_bytes());
-        self.crypto.encrypt_in_place(&mut footer_plain)?;
+        self.format
+            .write_footer(&mut footer_plain, entries.len(), extras.len());
+        self.format
+            .key()
+            .crypto()
+            .encrypt_in_place(&mut footer_plain)?;
 
         let mut footer = [0_u8; FOOTER_SIZE];
         footer[..FOOTER_USED_SIZE].copy_from_slice(&footer_plain[..FOOTER_USED_SIZE]);
@@ -70,5 +74,15 @@ impl ArchiveWriter {
             .context("failed to write pak footer")?;
 
         Ok(fat_offset + records_len + padding_len + FOOTER_SIZE as u64)
+    }
+
+    fn write_record<W>(&self, writer: &mut W, entry: &ArchiveEntry) -> Result<()>
+    where
+        W: Write,
+    {
+        let record = self.codec.encode(entry)?;
+        writer
+            .write_all(&record)
+            .context("failed to write pak FAT record")
     }
 }
