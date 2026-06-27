@@ -90,6 +90,50 @@ impl ArchiveMutator {
         self.entry_indices.contains_key(pak_path.as_str())
     }
 
+    pub fn remove_file(&mut self, pak_path: &PakPath) -> Result<bool> {
+        let Some(entry_index) = self.entry_indices.get(pak_path.as_str()).copied() else {
+            return Ok(false);
+        };
+        let removed = self.entries.remove(entry_index);
+        self.add_unused_slot(removed.offset(), removed.slot_size())?;
+        self.entry_indices.remove(pak_path.as_str());
+        for index in entry_index..self.entries.len() {
+            self.entry_indices
+                .insert(self.entries[index].name().to_owned(), index);
+        }
+        Ok(true)
+    }
+
+    pub fn upsert_from_entry(
+        &mut self,
+        source: &mut File,
+        entry: &ArchiveEntry,
+        pak_path: &PakPath,
+        allow_append: bool,
+    ) -> Result<bool> {
+        if let Some(entry_index) = self.entry_indices.get(pak_path.as_str()).copied() {
+            return self.replace_existing_from_entry(entry_index, source, entry, allow_append);
+        }
+
+        self.add_new_from_entry(source, entry, pak_path, allow_append)?;
+        Ok(false)
+    }
+
+    pub fn upsert_bytes(
+        &mut self,
+        data: &[u8],
+        pak_path: &PakPath,
+        allow_append: bool,
+    ) -> Result<bool> {
+        let now = WindowsFileTime::from_system_time(std::time::SystemTime::now()).value();
+        if let Some(entry_index) = self.entry_indices.get(pak_path.as_str()).copied() {
+            return self.replace_existing_from_bytes(entry_index, data, now, allow_append);
+        }
+
+        self.add_new_from_bytes(data, pak_path, now, now, allow_append)?;
+        Ok(false)
+    }
+
     pub fn finish(mut self) -> Result<u64> {
         let final_extras = self
             .extras
@@ -153,6 +197,187 @@ impl ArchiveMutator {
             modify_time,
         );
         Ok(true)
+    }
+
+    fn replace_existing_from_entry(
+        &mut self,
+        entry_index: usize,
+        source: &mut File,
+        source_entry: &ArchiveEntry,
+        allow_append: bool,
+    ) -> Result<bool> {
+        let source_size = source_entry.size();
+        let modify_time = source_entry.modify_time();
+        let old_slot_size = self.entries[entry_index].slot_size();
+        if source_size <= old_slot_size {
+            self.file
+                .seek(SeekFrom::Start(self.entries[entry_index].offset()))
+                .context("failed to seek replacement slot")?;
+            let outcome = self.copier.copy_range_to_writer_with_md5(
+                source,
+                source_entry.offset(),
+                source_size,
+                &mut self.file,
+            )?;
+            self.entries[entry_index].replace_in_place(outcome.bytes(), outcome.md5(), modify_time);
+            return Ok(true);
+        }
+
+        if !allow_append {
+            bail!(
+                "replacement is {source_size} bytes but current slot is only {old_slot_size} bytes"
+            );
+        }
+
+        let old_offset = self.entries[entry_index].offset();
+        let old_slot_size = self.entries[entry_index].slot_size();
+        self.add_unused_slot(old_offset, old_slot_size)?;
+        let (new_offset, padding) = self.allocate_slot(source_size, true)?;
+        self.file
+            .seek(SeekFrom::Start(new_offset))
+            .context("failed to seek replacement append slot")?;
+        let outcome = self.copier.copy_range_to_writer_with_md5(
+            source,
+            source_entry.offset(),
+            source_size,
+            &mut self.file,
+        )?;
+        self.entries[entry_index].replace_moved(
+            new_offset,
+            outcome.bytes(),
+            padding,
+            outcome.md5(),
+            modify_time,
+        );
+        Ok(true)
+    }
+
+    fn copy_bytes_to_writer(data: &[u8], writer: &mut File) -> Result<crate::io::CopyOutcome> {
+        use md5::{Digest, Md5};
+
+        let mut hasher = Md5::new();
+        hasher.update(data);
+        writer
+            .write_all(data)
+            .context("failed to write pak payload")?;
+        Ok(crate::io::CopyOutcome::new(
+            data.len() as u64,
+            hasher.finalize().into(),
+        ))
+    }
+
+    fn replace_existing_from_bytes(
+        &mut self,
+        entry_index: usize,
+        data: &[u8],
+        modify_time: i64,
+        allow_append: bool,
+    ) -> Result<bool> {
+        let source_size = data.len() as u64;
+        let old_slot_size = self.entries[entry_index].slot_size();
+        if source_size <= old_slot_size {
+            self.file
+                .seek(SeekFrom::Start(self.entries[entry_index].offset()))
+                .context("failed to seek replacement slot")?;
+            let outcome = Self::copy_bytes_to_writer(data, &mut self.file)?;
+            self.entries[entry_index].replace_in_place(outcome.bytes(), outcome.md5(), modify_time);
+            return Ok(true);
+        }
+
+        if !allow_append {
+            bail!(
+                "replacement is {source_size} bytes but current slot is only {old_slot_size} bytes"
+            );
+        }
+
+        let old_offset = self.entries[entry_index].offset();
+        let old_slot_size = self.entries[entry_index].slot_size();
+        self.add_unused_slot(old_offset, old_slot_size)?;
+        let (new_offset, padding) = self.allocate_slot(source_size, true)?;
+        self.file
+            .seek(SeekFrom::Start(new_offset))
+            .context("failed to seek replacement append slot")?;
+        let outcome = Self::copy_bytes_to_writer(data, &mut self.file)?;
+        self.entries[entry_index].replace_moved(
+            new_offset,
+            outcome.bytes(),
+            padding,
+            outcome.md5(),
+            modify_time,
+        );
+        Ok(true)
+    }
+
+    fn add_new_from_entry(
+        &mut self,
+        source: &mut File,
+        source_entry: &ArchiveEntry,
+        pak_path: &PakPath,
+        allow_append: bool,
+    ) -> Result<()> {
+        let source_size = source_entry.size();
+        let (new_offset, padding) = self.allocate_slot(source_size, allow_append)?;
+        self.file
+            .seek(SeekFrom::Start(new_offset))
+            .context("failed to seek new file slot")?;
+        let outcome = self.copier.copy_range_to_writer_with_md5(
+            source,
+            source_entry.offset(),
+            source_size,
+            &mut self.file,
+        )?;
+        if padding > 0 {
+            self.write_zeros(padding as usize)?;
+        }
+        let entry_index = self.entries.len();
+        self.entries.push(
+            ArchiveEntry::builder(pak_path.as_str())
+                .offset(new_offset)
+                .size(outcome.bytes())
+                .size_duplicate(outcome.bytes())
+                .padding_size(padding)
+                .md5(outcome.md5())
+                .create_time(source_entry.create_time())
+                .modify_time(source_entry.modify_time())
+                .build()?,
+        );
+        self.entry_indices
+            .insert(pak_path.as_str().to_owned(), entry_index);
+        Ok(())
+    }
+
+    fn add_new_from_bytes(
+        &mut self,
+        data: &[u8],
+        pak_path: &PakPath,
+        create_time: i64,
+        modify_time: i64,
+        allow_append: bool,
+    ) -> Result<()> {
+        let source_size = data.len() as u64;
+        let (new_offset, padding) = self.allocate_slot(source_size, allow_append)?;
+        self.file
+            .seek(SeekFrom::Start(new_offset))
+            .context("failed to seek new file slot")?;
+        let outcome = Self::copy_bytes_to_writer(data, &mut self.file)?;
+        if padding > 0 {
+            self.write_zeros(padding as usize)?;
+        }
+        let entry_index = self.entries.len();
+        self.entries.push(
+            ArchiveEntry::builder(pak_path.as_str())
+                .offset(new_offset)
+                .size(outcome.bytes())
+                .size_duplicate(outcome.bytes())
+                .padding_size(padding)
+                .md5(outcome.md5())
+                .create_time(create_time)
+                .modify_time(modify_time)
+                .build()?,
+        );
+        self.entry_indices
+            .insert(pak_path.as_str().to_owned(), entry_index);
+        Ok(())
     }
 
     fn add_new_file(

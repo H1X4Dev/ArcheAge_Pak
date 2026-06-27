@@ -3,8 +3,9 @@ use anyhow::Result;
 use crate::{
     cli::{Cli, Command},
     commands::{
-        add::AddCommand, create::CreateCommand, extract_all::ExtractAllCommand,
-        extract_file::ExtractFileCommand, list::ListCommand, replace::ReplaceCommand,
+        add::AddCommand, apply_patch::ApplyPatchCommand, create::CreateCommand,
+        extract_all::ExtractAllCommand, extract_file::ExtractFileCommand, list::ListCommand,
+        replace::ReplaceCommand,
     },
 };
 
@@ -23,6 +24,7 @@ impl CommandRunner {
             Command::Create(args) => CreateCommand::new(args).execute(),
             Command::Add(args) => AddCommand::new(args).execute(),
             Command::Replace(args) => ReplaceCommand::new(args).execute(),
+            Command::ApplyPatch(args) => ApplyPatchCommand::new(args).execute(),
         }
     }
 }

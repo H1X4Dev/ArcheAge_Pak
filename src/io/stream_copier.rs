@@ -67,6 +67,48 @@ impl StreamCopier {
         Ok(CopyOutcome::new(bytes, hasher.finalize().into()))
     }
 
+    pub fn copy_range_to_writer_with_md5(
+        &self,
+        reader: &mut File,
+        offset: u64,
+        size: u64,
+        writer: &mut File,
+    ) -> Result<CopyOutcome> {
+        reader
+            .seek(SeekFrom::Start(offset))
+            .context("failed to seek to pak payload")?;
+        let mut limited = reader.take(size);
+        let mut buffer = vec![0_u8; self.buffer_size];
+        let mut hasher = Md5::new();
+        let mut bytes = 0_u64;
+
+        loop {
+            let read = limited
+                .read(&mut buffer)
+                .context("failed to read pak payload")?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            writer
+                .write_all(&buffer[..read])
+                .context("failed to write pak payload")?;
+            bytes += read as u64;
+        }
+
+        Ok(CopyOutcome::new(bytes, hasher.finalize().into()))
+    }
+
+    pub fn copy_range_to_vec(&self, reader: &mut File, offset: u64, size: u64) -> Result<Vec<u8>> {
+        reader
+            .seek(SeekFrom::Start(offset))
+            .context("failed to seek to pak payload")?;
+        let mut limited = reader.take(size);
+        let mut output = Vec::with_capacity(size as usize);
+        std::io::copy(&mut limited, &mut output).context("failed to read pak payload")?;
+        Ok(output)
+    }
+
     pub fn copy_range_to_path(
         &self,
         reader: &mut File,

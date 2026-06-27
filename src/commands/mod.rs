@@ -1,4 +1,5 @@
 mod add;
+mod apply_patch;
 mod create;
 mod extract_all;
 mod extract_file;
