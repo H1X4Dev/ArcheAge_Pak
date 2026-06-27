@@ -1,6 +1,8 @@
 mod archive;
 mod archive_entry;
+mod archive_mutator;
 mod archive_writer;
+mod block_alignment;
 mod constants;
 mod crypto;
 mod header;
@@ -9,7 +11,9 @@ mod record_codec;
 
 pub use archive::Archive;
 pub use archive_entry::{ArchiveEntry, ArchiveEntryBuilder};
+pub use archive_mutator::ArchiveMutator;
 pub use archive_writer::ArchiveWriter;
+pub use block_alignment::BlockAlignment;
 pub use constants::{
     BLOCK_SIZE, DEFAULT_KEY, FOOTER_SIZE, FOOTER_USED_SIZE, NAME_SIZE, RECORD_SIZE,
 };

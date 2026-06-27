@@ -1,3 +1,4 @@
+mod add;
 mod create;
 mod extract_all;
 mod extract_file;

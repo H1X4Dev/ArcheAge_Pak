@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-use super::{CreateArgs, ExtractAllArgs, ExtractFileArgs, ListArgs, ReplaceArgs};
+use super::{AddArgs, CreateArgs, ExtractAllArgs, ExtractFileArgs, ListArgs, ReplaceArgs};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -12,6 +12,8 @@ pub enum Command {
     ExtractFile(ExtractFileArgs),
     /// Create a new pak from a directory.
     Create(CreateArgs),
+    /// Add or replace a file/directory in an existing pak.
+    Add(AddArgs),
     /// Replace one file in an existing pak.
     Replace(ReplaceArgs),
 }

@@ -3,8 +3,8 @@ use anyhow::Result;
 use crate::{
     cli::{Cli, Command},
     commands::{
-        create::CreateCommand, extract_all::ExtractAllCommand, extract_file::ExtractFileCommand,
-        list::ListCommand, replace::ReplaceCommand,
+        add::AddCommand, create::CreateCommand, extract_all::ExtractAllCommand,
+        extract_file::ExtractFileCommand, list::ListCommand, replace::ReplaceCommand,
     },
 };
 
@@ -21,6 +21,7 @@ impl CommandRunner {
             Command::ExtractAll(args) => ExtractAllCommand::new(args).execute(),
             Command::ExtractFile(args) => ExtractFileCommand::new(args).execute(),
             Command::Create(args) => CreateCommand::new(args).execute(),
+            Command::Add(args) => AddCommand::new(args).execute(),
             Command::Replace(args) => ReplaceCommand::new(args).execute(),
         }
     }

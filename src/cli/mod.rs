@@ -1,3 +1,4 @@
+mod add_args;
 mod app;
 mod command;
 mod create_args;
@@ -6,6 +7,7 @@ mod extract_file_args;
 mod list_args;
 mod replace_args;
 
+pub use add_args::AddArgs;
 pub use app::Cli;
 pub use command::Command;
 pub use create_args::CreateArgs;

@@ -9,7 +9,7 @@ use crate::{
     cli::CreateArgs,
     filetime::WindowsFileTime,
     io::{DirectorySource, StreamCopier},
-    pak::{ArchiveEntry, ArchiveWriter, BLOCK_SIZE, PakPath},
+    pak::{ArchiveEntry, ArchiveWriter, BlockAlignment, PakPath},
 };
 
 pub struct CreateCommand {
@@ -51,7 +51,7 @@ impl CreateCommand {
             .value();
             let modify_time = WindowsFileTime::from_system_time(metadata.modified()?).value();
             let outcome = copier.copy_file_to_writer_with_md5(file_path, &mut pak)?;
-            let padding = padding_for(outcome.bytes()) as u32;
+            let padding = BlockAlignment::padding_for_size(outcome.bytes()) as u32;
             if padding > 0 {
                 write_zeros(&mut pak, padding as usize)?;
             }
@@ -80,10 +80,6 @@ impl CreateCommand {
         );
         Ok(())
     }
-}
-
-fn padding_for(size: u64) -> u64 {
-    (BLOCK_SIZE - (size % BLOCK_SIZE)) % BLOCK_SIZE
 }
 
 fn write_zeros(writer: &mut File, mut bytes: usize) -> Result<()> {

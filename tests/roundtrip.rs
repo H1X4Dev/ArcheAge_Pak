@@ -14,7 +14,7 @@ use clap::Parser;
 use tempfile::tempdir;
 
 #[test]
-fn create_extract_replace_and_extract_all_roundtrip() -> Result<()> {
+fn create_extract_replace_add_and_extract_all_roundtrip() -> Result<()> {
     let temp = tempdir()?;
     let source_dir = temp.path().join("source");
     let nested_dir = source_dir.join("nested");
@@ -83,6 +83,65 @@ fn create_extract_replace_and_extract_all_roundtrip() -> Result<()> {
     assert_eq!(
         fs::read(extract_all_dir.join("nested").join("beta.bin"))?,
         (0_u8..=255).collect::<Vec<_>>()
+    );
+
+    let missing_replace = run_cli([
+        "replace".into(),
+        path_arg(&pak),
+        OsString::from("missing.bin"),
+        path_arg(&replacement),
+    ]);
+    assert!(missing_replace.is_err());
+
+    let add_dir = temp.path().join("add_source");
+    let add_nested_dir = add_dir.join("nested");
+    fs::create_dir_all(&add_nested_dir)?;
+    let beta_update = (0..600)
+        .map(|value| 255_u8.wrapping_sub((value % 251) as u8))
+        .collect::<Vec<_>>();
+    let gamma_bytes = b"new file from directory add".to_vec();
+    fs::write(add_nested_dir.join("beta.bin"), &beta_update)?;
+    fs::write(add_dir.join("gamma.txt"), &gamma_bytes)?;
+    run_cli(["add".into(), path_arg(&pak), path_arg(&add_dir)])?;
+
+    let loose = temp.path().join("loose.dat");
+    let loose_bytes = b"single file add".to_vec();
+    fs::write(&loose, &loose_bytes)?;
+    run_cli([
+        "add".into(),
+        path_arg(&pak),
+        path_arg(&loose),
+        OsString::from("extra/loose.dat"),
+    ])?;
+
+    let added_archive = Archive::open(&pak)?;
+    assert_eq!(added_archive.entries().len(), 4);
+    assert_eq!(
+        added_archive
+            .find("nested/beta.bin")
+            .expect("updated beta")
+            .size(),
+        beta_update.len() as u64
+    );
+    assert!(added_archive.find("gamma.txt").is_some());
+    assert!(added_archive.find("extra/loose.dat").is_some());
+
+    let added_extract_dir = temp.path().join("added_all");
+    run_cli([
+        "extract-all".into(),
+        path_arg(&pak),
+        path_arg(&added_extract_dir),
+        "--jobs".into(),
+        "2".into(),
+    ])?;
+    assert_eq!(
+        fs::read(added_extract_dir.join("nested").join("beta.bin"))?,
+        beta_update
+    );
+    assert_eq!(fs::read(added_extract_dir.join("gamma.txt"))?, gamma_bytes);
+    assert_eq!(
+        fs::read(added_extract_dir.join("extra").join("loose.dat"))?,
+        loose_bytes
     );
 
     Ok(())
