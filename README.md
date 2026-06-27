@@ -13,11 +13,12 @@ Command-line tooling for ArcheAge `game_pak` archives.
 - Replace an existing file in a pak.
 - Add a file or directory to an existing pak.
 - When adding a path that already exists, the existing pak entry is replaced.
+- Apply a patch pak to an existing pak, including `deleted.txt` deletions.
 - Reuses existing free slots when possible and appends before rewriting the FAT when needed.
 
 ## Safety
 
-Editing commands modify pak files in place. Keep a backup of any original archive before using `add` or `replace`.
+Editing commands modify pak files in place. Keep a backup of any original archive before using `add`, `replace`, or `apply-patch`.
 
 Pak paths use forward slashes, for example `game/config/example.xml`. Unsafe paths such as `../file` are rejected.
 
@@ -50,6 +51,7 @@ extract-file  Extract one file from the pak
 create        Create a new pak from a directory
 add           Add or replace a file/directory in an existing pak
 replace       Replace one file in an existing pak
+apply-patch   Copy a source pak into a target pak and apply deleted.txt deletions
 ```
 
 ## Examples
@@ -119,6 +121,12 @@ Fail instead of appending if the new payload cannot fit into an existing slot:
 ```powershell
 archeage-pak.exe add F:\path\to\game_pak F:\patch_directory --in-place-only
 archeage-pak.exe replace F:\path\to\game_pak game/config/example.xml F:\patch\example.xml --in-place-only
+```
+
+Apply a patch pak to an existing pak. All source files except `deleted.txt` are copied into the target. If the source contains `deleted.txt`, each listed path is removed from the target and the source manifest is appended to the target's `deleted.txt`:
+
+```powershell
+archeage-pak.exe apply-patch F:\patch.pak F:\path\to\game_pak
 ```
 
 ## Development

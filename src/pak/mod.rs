@@ -6,6 +6,7 @@ mod archive_writer;
 mod block_alignment;
 mod constants;
 mod crypto;
+mod deleted_manifest;
 mod header;
 mod pak_path;
 mod record_codec;
@@ -20,6 +21,7 @@ pub use constants::{
     BLOCK_SIZE, DEFAULT_KEY, FOOTER_SIZE, FOOTER_USED_SIZE, NAME_SIZE, RECORD_SIZE,
 };
 pub use crypto::PakCrypto;
+pub use deleted_manifest::{DELETED_MANIFEST_PATH, DeletedManifest};
 pub use header::Header;
 pub use pak_path::PakPath;
 pub use record_codec::RecordCodec;
